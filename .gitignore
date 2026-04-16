@@ -10,7 +10,7 @@
 *.userosscache
 *.sln.docstates
 *.env
-*pdf
+*.pdf
 QWEN.md
 
 # User-specific files (MonoDevelop/Xamarin Studio)

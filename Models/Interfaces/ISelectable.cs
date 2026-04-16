@@ -1,8 +1,8 @@
-namespace SimsConstructor.Models.Core;
+namespace SimsConstructor.Models.Interfaces;
 
 public interface ISelectable
 {
-    bool IsSelected { get; }
     void Select();
     void Deselect();
+    bool IsSelected { get; }
 }
