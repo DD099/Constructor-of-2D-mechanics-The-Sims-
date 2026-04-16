@@ -12,6 +12,8 @@
 *.env
 *.pdf
 QWEN.md
+*.sln
+docs/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

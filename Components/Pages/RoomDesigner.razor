@@ -1,0 +1,145 @@
+@page "/designer"
+@rendermode InteractiveServer
+
+@using System.Drawing
+@using SimsConstructor.Models
+@using SimsConstructor.Models.Items
+
+<PageTitle>Room designer</PageTitle>
+
+<h1 class="mb-3">Room designer</h1>
+<p class="text-muted small mb-4">
+    Preview only (Option A): select an item from the list or click its shape in the room.
+</p>
+
+<div class="room-designer">
+    <div class="room-designer__preview">
+        <div class="room-designer__canvas"
+             style="width: @(RoomWidthPx)px; height: @(RoomHeightPx)px;">
+            @foreach (var item in _items)
+            {
+                <button type="button"
+                        @key="item.Id"
+                        class="room-item @(item.IsSelected ? "room-item--selected" : null)"
+                        style="@ItemButtonStyle(item)"
+                        title="@item.Name"
+                        @onclick="@(() => Select(item))">
+                    <span class="visually-hidden">@item.Name</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    <aside class="room-designer__sidebar card">
+        <div class="card-header">Items in room</div>
+        <div class="list-group list-group-flush">
+            @foreach (var item in _items)
+            {
+                <button type="button"
+                        @key="item.Id"
+                        class="list-group-item list-group-item-action @(item.IsSelected ? "active" : null)"
+                        @onclick="@(() => Select(item))">
+                    <span class="fw-semibold d-block">@item.Name</span>
+                    <span class="small text-muted">@KindLabel(item)</span>
+                </button>
+            }
+        </div>
+    </aside>
+</div>
+
+@code {
+    private const float ScalePxPerUnit = 50f;
+    private const float RoomWidthUnits = 6f;
+    private const float RoomHeightUnits = 4f;
+
+    private readonly List<RoomItem> _items = [];
+
+    private int RoomWidthPx => (int)(RoomWidthUnits * ScalePxPerUnit);
+    private int RoomHeightPx => (int)(RoomHeightUnits * ScalePxPerUnit);
+
+    protected override void OnInitialized()
+    {
+        var bed = new FurnitureItem(
+            name: "Bed",
+            description: "Double bed",
+            color: Color.SteelBlue,
+            width: 2f,
+            height: 1.6f,
+            category: FurnitureCategory.Bed,
+            material: "Wood",
+            placementRule: PlacementRule.WallRequired,
+            price: 899m);
+        bed.PlaceAt(0.4f, 0.4f);
+
+        var table = new FurnitureItem(
+            name: "Dining table",
+            description: "Seats four",
+            color: Color.SaddleBrown,
+            width: 1.4f,
+            height: 0.9f,
+            category: FurnitureCategory.Table,
+            material: "Wood",
+            placementRule: PlacementRule.FloorOnly,
+            price: 449m);
+        table.PlaceAt(3.2f, 1.1f);
+
+        var tv = new ApplianceItem(
+            name: "TV",
+            description: "Wall-mounted panel",
+            color: Color.DimGray,
+            width: 1.2f,
+            height: 0.15f,
+            powerConsumption: 120m,
+            requiresWater: false,
+            requiresVentilation: false,
+            price: 699m);
+        tv.PlaceAt(0.5f, 0.05f);
+
+        var rug = new DecorationItem(
+            name: "Rug",
+            description: "Area rug",
+            color: Color.IndianRed,
+            width: 2f,
+            height: 1.2f,
+            style: DecorationStyle.Modern,
+            isWallMountable: false,
+            price: 129m);
+        rug.PlaceAt(2.8f, 2.4f);
+
+        _items.AddRange([bed, table, tv, rug]);
+    }
+
+    private void Select(RoomItem item)
+    {
+        foreach (var i in _items)
+            i.Deselect();
+
+        item.Select();
+    }
+
+    private static string KindLabel(RoomItem item) => item switch
+    {
+        FurnitureItem f => $"Furniture · {f.Category}",
+        ApplianceItem => "Appliance",
+        DecorationItem d => $"Decoration · {d.Style}",
+        _ => item.GetType().Name
+    };
+
+    private string ItemButtonStyle(RoomItem item)
+    {
+        var left = item.X * ScalePxPerUnit;
+        var top = item.Y * ScalePxPerUnit;
+        var w = item.Width * ScalePxPerUnit;
+        var h = item.Height * ScalePxPerUnit;
+        var fill = Rgb(item.Color);
+
+        return $"left:{left.ToString(System.Globalization.CultureInfo.InvariantCulture)}px;" +
+               $"top:{top.ToString(System.Globalization.CultureInfo.InvariantCulture)}px;" +
+               $"width:{w.ToString(System.Globalization.CultureInfo.InvariantCulture)}px;" +
+               $"height:{h.ToString(System.Globalization.CultureInfo.InvariantCulture)}px;" +
+               $"--item-fill:{fill};";
+    }
+
+    private static string Rgb(Color color) =>
+        $"rgb({color.R}, {color.G}, {color.B})";
+}
