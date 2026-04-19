@@ -4,9 +4,6 @@ using SimsConstructor.Models.Interfaces;
 
 namespace SimsConstructor.Models.Items;
 
-/// <summary>
-/// Abstract item with position and footprint in room units (top-down 2D).
-/// </summary>
 public abstract class RoomItem : GameObject, IPlaceable, IRotatable, ISelectable
 {
     private bool _placed;

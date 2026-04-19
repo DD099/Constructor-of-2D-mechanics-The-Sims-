@@ -2,21 +2,28 @@
 @rendermode InteractiveServer
 
 @using System.Drawing
+@using System.Globalization
 @using SimsConstructor.Models
 @using SimsConstructor.Models.Items
+@using SimsConstructor.Services
+
+@inject RoomService Room
 
 <PageTitle>Room designer</PageTitle>
 
 <h1 class="mb-3">Room designer</h1>
-<p class="text-muted small mb-4">
-    Preview only (Option A): select an item from the list or click its shape in the room.
-</p>
+<p class="text-muted small mb-4">Select an item, set X/Y, place or rotate.</p>
+
+@if (!string.IsNullOrEmpty(Room.StatusMessage))
+{
+    <div class="alert alert-secondary py-2 small mb-3" role="status">@Room.StatusMessage</div>
+}
 
 <div class="room-designer">
     <div class="room-designer__preview">
         <div class="room-designer__canvas"
              style="width: @(RoomWidthPx)px; height: @(RoomHeightPx)px;">
-            @foreach (var item in _items)
+            @foreach (var item in Room.Items)
             {
                 <button type="button"
                         @key="item.Id"
@@ -30,91 +37,96 @@
         </div>
     </div>
 
-    <aside class="room-designer__sidebar card">
-        <div class="card-header">Items in room</div>
-        <div class="list-group list-group-flush">
-            @foreach (var item in _items)
-            {
-                <button type="button"
-                        @key="item.Id"
-                        class="list-group-item list-group-item-action @(item.IsSelected ? "active" : null)"
-                        @onclick="@(() => Select(item))">
-                    <span class="fw-semibold d-block">@item.Name</span>
-                    <span class="small text-muted">@KindLabel(item)</span>
-                </button>
-            }
+    <aside class="room-designer__sidebar">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Items in room</span>
+                <span class="badge text-bg-light">Total @FormatMoney(Room.GetTotalPrice())</span>
+            </div>
+            <div class="list-group list-group-flush">
+                @foreach (var item in Room.Items)
+                {
+                    <button type="button"
+                            @key="item.Id"
+                            class="list-group-item list-group-item-action @(item.IsSelected ? "active" : null)"
+                            @onclick="@(() => Select(item))">
+                        <span class="fw-semibold d-block">@item.Name</span>
+                        <span class="small text-muted">@KindLabel(item)</span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Placement</div>
+            <div class="card-body">
+                <div class="row g-2 mb-2">
+                    <div class="col-6">
+                        <label class="form-label small mb-0" for="placeX">X (m)</label>
+                        <input id="placeX" class="form-control form-control-sm" @bind="_placeX" @bind:event="oninput" />
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small mb-0" for="placeY">Y (m)</label>
+                        <input id="placeY" class="form-control form-control-sm" @bind="_placeY" @bind:event="oninput" />
+                    </div>
+                </div>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="ApplyPlacement">Place selected</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Rotate">Rotate 90°</button>
+                </div>
+            </div>
         </div>
     </aside>
 </div>
 
 @code {
     private const float ScalePxPerUnit = 50f;
-    private const float RoomWidthUnits = 6f;
-    private const float RoomHeightUnits = 4f;
 
-    private readonly List<RoomItem> _items = [];
+    private string _placeX = "0";
+    private string _placeY = "0";
 
-    private int RoomWidthPx => (int)(RoomWidthUnits * ScalePxPerUnit);
-    private int RoomHeightPx => (int)(RoomHeightUnits * ScalePxPerUnit);
+    private int RoomWidthPx => (int)(Room.WidthUnits * ScalePxPerUnit);
+    private int RoomHeightPx => (int)(Room.HeightUnits * ScalePxPerUnit);
 
     protected override void OnInitialized()
     {
-        var bed = new FurnitureItem(
-            name: "Bed",
-            description: "Double bed",
-            color: Color.SteelBlue,
-            width: 2f,
-            height: 1.6f,
-            category: FurnitureCategory.Bed,
-            material: "Wood",
-            placementRule: PlacementRule.WallRequired,
-            price: 899m);
-        bed.PlaceAt(0.4f, 0.4f);
-
-        var table = new FurnitureItem(
-            name: "Dining table",
-            description: "Seats four",
-            color: Color.SaddleBrown,
-            width: 1.4f,
-            height: 0.9f,
-            category: FurnitureCategory.Table,
-            material: "Wood",
-            placementRule: PlacementRule.FloorOnly,
-            price: 449m);
-        table.PlaceAt(3.2f, 1.1f);
-
-        var tv = new ApplianceItem(
-            name: "TV",
-            description: "Wall-mounted panel",
-            color: Color.DimGray,
-            width: 1.2f,
-            height: 0.15f,
-            powerConsumption: 120m,
-            requiresWater: false,
-            requiresVentilation: false,
-            price: 699m);
-        tv.PlaceAt(0.5f, 0.05f);
-
-        var rug = new DecorationItem(
-            name: "Rug",
-            description: "Area rug",
-            color: Color.IndianRed,
-            width: 2f,
-            height: 1.2f,
-            style: DecorationStyle.Modern,
-            isWallMountable: false,
-            price: 129m);
-        rug.PlaceAt(2.8f, 2.4f);
-
-        _items.AddRange([bed, table, tv, rug]);
+        Room.EnsureSampleRoom();
+        SyncInputsFromSelection();
     }
 
     private void Select(RoomItem item)
     {
-        foreach (var i in _items)
-            i.Deselect();
+        Room.Select(item);
+        SyncInputsFromSelection();
+    }
 
-        item.Select();
+    private void SyncInputsFromSelection()
+    {
+        var selected = Room.GetSelected();
+        if (selected is null)
+            return;
+
+        _placeX = selected.X.ToString(CultureInfo.InvariantCulture);
+        _placeY = selected.Y.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private void ApplyPlacement()
+    {
+        if (!float.TryParse(_placeX, NumberStyles.Float, CultureInfo.InvariantCulture, out var x)
+            || !float.TryParse(_placeY, NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+        {
+            Room.SetStatus("Invalid X or Y.");
+            return;
+        }
+
+        Room.TryPlaceSelected(x, y);
+        SyncInputsFromSelection();
+    }
+
+    private void Rotate()
+    {
+        Room.TryRotateSelected();
+        SyncInputsFromSelection();
     }
 
     private static string KindLabel(RoomItem item) => item switch
@@ -133,13 +145,16 @@
         var h = item.Height * ScalePxPerUnit;
         var fill = Rgb(item.Color);
 
-        return $"left:{left.ToString(System.Globalization.CultureInfo.InvariantCulture)}px;" +
-               $"top:{top.ToString(System.Globalization.CultureInfo.InvariantCulture)}px;" +
-               $"width:{w.ToString(System.Globalization.CultureInfo.InvariantCulture)}px;" +
-               $"height:{h.ToString(System.Globalization.CultureInfo.InvariantCulture)}px;" +
+        return $"left:{left.ToString(CultureInfo.InvariantCulture)}px;" +
+               $"top:{top.ToString(CultureInfo.InvariantCulture)}px;" +
+               $"width:{w.ToString(CultureInfo.InvariantCulture)}px;" +
+               $"height:{h.ToString(CultureInfo.InvariantCulture)}px;" +
                $"--item-fill:{fill};";
     }
 
     private static string Rgb(Color color) =>
         $"rgb({color.R}, {color.G}, {color.B})";
+
+    private static string FormatMoney(decimal value) =>
+        value.ToString("0.##", CultureInfo.InvariantCulture);
 }

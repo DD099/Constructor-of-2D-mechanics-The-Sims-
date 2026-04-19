@@ -2,9 +2,6 @@ using System.Drawing;
 
 namespace SimsConstructor.Models.Core;
 
-/// <summary>
-/// Abstract base for all entities in the designer.
-/// </summary>
 public abstract class GameObject
 {
     protected GameObject(string name, string description, Color color)
