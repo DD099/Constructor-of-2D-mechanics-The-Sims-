@@ -1,8 +1,10 @@
 using System.Drawing;
 using System.Globalization;
+using Microsoft.Extensions.Options;
 using SimsConstructor.Models;
 using SimsConstructor.Models.Interfaces;
 using SimsConstructor.Models.Items;
+using SimsConstructor.Options;
 
 namespace SimsConstructor.Services;
 
@@ -12,10 +14,17 @@ public sealed class RoomService
     private readonly PlacementValidator _placement;
     private bool _initialized;
 
-    public RoomService(PlacementValidator placement) => _placement = placement;
+    public RoomService(PlacementValidator placement, IOptions<RoomSettings> roomOptions)
+    {
+        _placement = placement;
+        var r = roomOptions.Value;
+        WidthUnits = r.WidthMeters > 0f ? r.WidthMeters : 6f;
+        HeightUnits = r.HeightMeters > 0f ? r.HeightMeters : 4f;
+    }
 
-    public float WidthUnits { get; } = 6f;
-    public float HeightUnits { get; } = 4f;
+    public float WidthUnits { get; }
+
+    public float HeightUnits { get; }
 
     public IReadOnlyList<RoomItem> Items => _items;
 

@@ -1,8 +1,10 @@
 using SimsConstructor.Components;
+using SimsConstructor.Options;
 using SimsConstructor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.Configure<RoomSettings>(builder.Configuration.GetSection(RoomSettings.SectionName));
 builder.Services.AddSingleton<PlacementValidator>();
 builder.Services.AddScoped<RoomService>();
 builder.Services.AddRazorComponents()
@@ -17,7 +19,6 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 
 app.UseAntiforgery();
 
