@@ -70,4 +70,17 @@ public abstract class RoomItem : GameObject, IPlaceable, IRotatable, ISelectable
     public void Deselect() => IsSelected = false;
 
     public override RectangleF GetRenderBounds() => new(X, Y, Width, Height);
+
+    internal void RestoreFromSnapshot(float x, float y, float width, float height, int rotation, bool placed)
+    {
+        if (width <= 0f || height <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(width));
+
+        Width = width;
+        Height = height;
+        Rotation = (rotation % 360 + 360) % 360;
+        _x = x;
+        _y = y;
+        _placed = placed;
+    }
 }

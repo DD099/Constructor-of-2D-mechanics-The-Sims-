@@ -7,4 +7,6 @@ public sealed class RoomSettings
     public float WidthMeters { get; set; } = 6f;
 
     public float HeightMeters { get; set; } = 4f;
+
+    public decimal? BudgetLimit { get; set; }
 }

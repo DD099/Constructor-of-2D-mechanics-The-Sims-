@@ -12,6 +12,7 @@ public sealed class RoomService
 {
     private readonly List<RoomItem> _items = [];
     private readonly PlacementValidator _placement;
+    private readonly decimal? _budgetLimit;
     private bool _initialized;
 
     public RoomService(PlacementValidator placement, IOptions<RoomSettings> roomOptions)
@@ -20,11 +21,17 @@ public sealed class RoomService
         var r = roomOptions.Value;
         WidthUnits = r.WidthMeters > 0f ? r.WidthMeters : 6f;
         HeightUnits = r.HeightMeters > 0f ? r.HeightMeters : 4f;
+        _budgetLimit = r.BudgetLimit is decimal b && b > 0m ? b : null;
     }
 
     public float WidthUnits { get; }
 
     public float HeightUnits { get; }
+
+    public decimal? BudgetLimit => _budgetLimit;
+
+    public bool IsOverBudget() =>
+        _budgetLimit is not null && GetTotalPrice() > _budgetLimit.Value;
 
     public IReadOnlyList<RoomItem> Items => _items;
 
@@ -155,5 +162,24 @@ public sealed class RoomService
         }
 
         return sum;
+    }
+
+    public string ExportLayoutJson() =>
+        RoomLayoutSerializer.Serialize(_items, WidthUnits, HeightUnits);
+
+    public bool TryImportLayoutJson(string json, out string? error)
+    {
+        if (!RoomLayoutSerializer.TryDeserialize(json, WidthUnits, HeightUnits, _placement, out var list, out error))
+            return false;
+
+        foreach (var i in _items)
+            i.Deselect();
+
+        _items.Clear();
+        _items.AddRange(list!);
+        _initialized = true;
+        StatusMessage = "Imported.";
+        error = null;
+        return true;
     }
 }

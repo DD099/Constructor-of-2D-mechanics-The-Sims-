@@ -8,6 +8,7 @@
 @using SimsConstructor.Services
 
 @inject RoomService Room
+@inject IJSRuntime JS
 
 <PageTitle>Room designer</PageTitle>
 
@@ -38,6 +39,37 @@
     </div>
 
     <aside class="room-designer__sidebar">
+        @if (Room.BudgetLimit is { } budgetLimit)
+        {
+            var total = Room.GetTotalPrice();
+            var ratio = budgetLimit > 0m ? (double)(total / budgetLimit) : 0d;
+            var barPct = Math.Min(ratio * 100d, 100d);
+            var over = Room.IsOverBudget();
+            <div class="card mb-3 @(over ? "border-danger" : null)">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Budget</span>
+                    <span class="badge @(over ? "text-bg-danger" : "text-bg-light")">
+                        @FormatMoney(total) / @FormatMoney(budgetLimit)
+                    </span>
+                </div>
+                <div class="card-body py-2">
+                    <div class="progress" style="height: 0.5rem;" role="progressbar"
+                         aria-valuemin="0" aria-valuemax="100" aria-valuenow="@((int)barPct)">
+                        <div class="progress-bar @(over ? "bg-danger" : "bg-success")"
+                             style="width: @barPct.ToString("0.##", CultureInfo.InvariantCulture)%"></div>
+                    </div>
+                    @if (over)
+                    {
+                        <p class="small text-danger mb-0 mt-2">Over budget by @FormatMoney(total - budgetLimit).</p>
+                    }
+                    else if (ratio >= 0.9d)
+                    {
+                        <p class="small text-warning mb-0 mt-2">Close to the limit.</p>
+                    }
+                </div>
+            </div>
+        }
+
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span>Items in room</span>
@@ -73,6 +105,21 @@
                 <div class="d-grid gap-2">
                     <button type="button" class="btn btn-primary btn-sm" @onclick="ApplyPlacement">Place selected</button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Rotate">Rotate 90°</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Layout file</div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="ExportLayout">
+                        Export JSON
+                    </button>
+                    <label class="form-label small mb-0" for="layoutImport">Import JSON</label>
+                    <InputFile id="layoutImport" class="form-control form-control-sm"
+                               accept=".json,application/json"
+                               OnChange="ImportLayout" />
                 </div>
             </div>
         </div>
@@ -127,6 +174,40 @@
     {
         Room.TryRotateSelected();
         SyncInputsFromSelection();
+    }
+
+    private async Task ExportLayout()
+    {
+        var json = Room.ExportLayoutJson();
+        await JS.InvokeVoidAsync("simsDownloadText", "room-layout.json", json);
+        Room.SetStatus("Exported room-layout.json.");
+    }
+
+    private async Task ImportLayout(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null)
+            return;
+
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: 2_000_000);
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+
+            if (!Room.TryImportLayoutJson(json, out var err))
+            {
+                Room.SetStatus(err ?? "Import failed.");
+            }
+
+            SyncInputsFromSelection();
+        }
+        catch (Exception ex)
+        {
+            Room.SetStatus(ex.Message);
+        }
+
+        StateHasChanged();
     }
 
     private static string KindLabel(RoomItem item) => item switch
