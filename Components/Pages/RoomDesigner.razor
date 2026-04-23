@@ -4,6 +4,7 @@
 @using System.Drawing
 @using System.Globalization
 @using SimsConstructor.Models
+@using SimsConstructor.Models.Interfaces
 @using SimsConstructor.Models.Items
 @using SimsConstructor.Services
 
@@ -23,7 +24,8 @@
 <div class="room-designer">
     <div class="room-designer__preview">
         <div class="room-designer__canvas"
-             style="width: @(RoomWidthPx)px; height: @(RoomHeightPx)px;">
+             style="width: @(RoomWidthPx)px; height: @(RoomHeightPx)px;"
+             @onclick="ClearSelection">
             @foreach (var item in Room.Items)
             {
                 <button type="button"
@@ -31,6 +33,7 @@
                         class="room-item @(item.IsSelected ? "room-item--selected" : null)"
                         style="@ItemButtonStyle(item)"
                         title="@item.Name"
+                        @onclick:stopPropagation="true"
                         @onclick="@(() => Select(item))">
                     <span class="visually-hidden">@item.Name</span>
                 </button>
@@ -88,6 +91,48 @@
                 }
             </div>
         </div>
+
+        <div class="card mb-3">
+            <div class="card-header">Catalog</div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    @foreach (var t in Room.Catalog)
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm"
+                                title="@t.Category"
+                                @onclick="@(() => AddFromCatalog(t.Id))">
+                            + @t.Title
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (Room.GetSelected() is { } selected)
+        {
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Selected</span>
+                    @if (selected is SimsConstructor.Models.Interfaces.IPricable p)
+                    {
+                        <span class="badge text-bg-light">@FormatMoney(p.GetPrice())</span>
+                    }
+                </div>
+                <div class="card-body small">
+                    <div class="fw-semibold">@selected.Name</div>
+                    <div class="text-muted">@KindLabel(selected)</div>
+                    <hr class="my-2" />
+                    <div><span class="text-muted">Size:</span> @selected.Width.ToString("0.##", CultureInfo.InvariantCulture) × @selected.Height.ToString("0.##", CultureInfo.InvariantCulture) m</div>
+                    <div><span class="text-muted">Rotation:</span> @selected.Rotation°</div>
+                    <div><span class="text-muted">Placed:</span> @(selected.IsPlaced ? "Yes" : "No")</div>
+                    <div class="d-grid mt-2">
+                        <button type="button" class="btn btn-outline-danger btn-sm" @onclick="DeleteSelected">
+                            Delete selected
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
 
         <div class="card">
             <div class="card-header">Placement</div>
@@ -147,11 +192,21 @@
         SyncInputsFromSelection();
     }
 
+    private void ClearSelection()
+    {
+        Room.ClearSelection();
+        SyncInputsFromSelection();
+    }
+
     private void SyncInputsFromSelection()
     {
         var selected = Room.GetSelected();
         if (selected is null)
+        {
+            _placeX = "0";
+            _placeY = "0";
             return;
+        }
 
         _placeX = selected.X.ToString(CultureInfo.InvariantCulture);
         _placeY = selected.Y.ToString(CultureInfo.InvariantCulture);
@@ -173,6 +228,18 @@
     private void Rotate()
     {
         Room.TryRotateSelected();
+        SyncInputsFromSelection();
+    }
+
+    private void AddFromCatalog(string id)
+    {
+        Room.TryAddFromCatalog(id);
+        SyncInputsFromSelection();
+    }
+
+    private void DeleteSelected()
+    {
+        Room.RemoveSelected();
         SyncInputsFromSelection();
     }
 
