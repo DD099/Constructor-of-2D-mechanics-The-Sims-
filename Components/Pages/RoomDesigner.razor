@@ -24,17 +24,23 @@
 <div class="room-designer">
     <div class="room-designer__preview">
         <div class="room-designer__canvas"
+             @ref="_canvasRef"
              style="width: @(RoomWidthPx)px; height: @(RoomHeightPx)px;"
-             @onclick="ClearSelection">
+             @onclick="ClearSelection"
+             @onmousemove="OnCanvasMouseMove"
+             @onmouseup="OnCanvasMouseUp"
+             @onmouseleave="OnCanvasMouseLeave">
             @foreach (var item in Room.Items)
             {
                 <button type="button"
                         @key="item.Id"
-                        class="room-item @(item.IsSelected ? "room-item--selected" : null)"
+                        class="room-item @(item.IsSelected ? "room-item--selected" : null) @((item.IsSelected && Room.IsDragging && !Room.IsDragValid) ? "room-item--invalid" : null)"
                         style="@ItemButtonStyle(item)"
                         title="@item.Name"
                         @onclick:stopPropagation="true"
-                        @onclick="@(() => Select(item))">
+                        @onclick="@(() => Select(item))"
+                        @onmousedown:stopPropagation="true"
+                        @onmousedown="@((e) => StartDrag(item, e))">
                     <span class="visually-hidden">@item.Name</span>
                 </button>
             }
@@ -95,6 +101,15 @@
         <div class="card mb-3">
             <div class="card-header">Catalog</div>
             <div class="card-body">
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" role="switch" id="snapGrid" @bind="Room.SnapToGrid" />
+                    <label class="form-check-label small" for="snapGrid">Snap to grid</label>
+                </div>
+                <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text">Grid (m)</span>
+                    <input class="form-control" inputmode="decimal" @bind="_gridStep" @bind:event="oninput" />
+                    <button type="button" class="btn btn-outline-secondary" @onclick="ApplyGridStep">Apply</button>
+                </div>
                 <div class="d-grid gap-2">
                     @foreach (var t in Room.Catalog)
                     {
@@ -176,6 +191,11 @@
 
     private string _placeX = "0";
     private string _placeY = "0";
+    private string _gridStep = "0.25";
+    private ElementReference _canvasRef;
+    private bool _dragging;
+    private float _dragOffsetXpx;
+    private float _dragOffsetYpx;
 
     private int RoomWidthPx => (int)(Room.WidthUnits * ScalePxPerUnit);
     private int RoomHeightPx => (int)(Room.HeightUnits * ScalePxPerUnit);
@@ -189,6 +209,53 @@
     private void Select(RoomItem item)
     {
         Room.Select(item);
+        SyncInputsFromSelection();
+    }
+
+    private async Task StartDrag(RoomItem item, MouseEventArgs e)
+    {
+        Room.Select(item);
+        SyncInputsFromSelection();
+
+        if (!Room.BeginDragSelected())
+            return;
+
+        var pos = await GetCanvasPos(e.ClientX, e.ClientY);
+        _dragOffsetXpx = pos.X - (item.X * ScalePxPerUnit);
+        _dragOffsetYpx = pos.Y - (item.Y * ScalePxPerUnit);
+        _dragging = true;
+    }
+
+    private async Task OnCanvasMouseMove(MouseEventArgs e)
+    {
+        if (!_dragging)
+            return;
+
+        var pos = await GetCanvasPos(e.ClientX, e.ClientY);
+        var x = (pos.X - _dragOffsetXpx) / ScalePxPerUnit;
+        var y = (pos.Y - _dragOffsetYpx) / ScalePxPerUnit;
+        Room.UpdateDrag(x, y);
+        SyncInputsFromSelection();
+        StateHasChanged();
+    }
+
+    private void OnCanvasMouseUp()
+    {
+        if (!_dragging)
+            return;
+
+        _dragging = false;
+        Room.EndDrag(commit: true);
+        SyncInputsFromSelection();
+    }
+
+    private void OnCanvasMouseLeave()
+    {
+        if (!_dragging)
+            return;
+
+        _dragging = false;
+        Room.EndDrag(commit: true);
         SyncInputsFromSelection();
     }
 
@@ -223,6 +290,19 @@
 
         Room.TryPlaceSelected(x, y);
         SyncInputsFromSelection();
+    }
+
+    private void ApplyGridStep()
+    {
+        if (float.TryParse(_gridStep, NumberStyles.Float, CultureInfo.InvariantCulture, out var step) && step > 0f)
+        {
+            Room.GridStepMeters = step;
+            Room.SetStatus($"Grid step: {step.ToString("0.##", CultureInfo.InvariantCulture)} m");
+        }
+        else
+        {
+            Room.SetStatus("Invalid grid step.");
+        }
     }
 
     private void Rotate()
@@ -284,6 +364,15 @@
         DecorationItem d => $"Decoration · {d.Style}",
         _ => item.GetType().Name
     };
+
+    private async Task<CanvasPos> GetCanvasPos(double clientX, double clientY) =>
+        await JS.InvokeAsync<CanvasPos>("simsGetRelativePos", _canvasRef, clientX, clientY);
+
+    private sealed class CanvasPos
+    {
+        public float X { get; set; }
+        public float Y { get; set; }
+    }
 
     private string ItemButtonStyle(RoomItem item)
     {

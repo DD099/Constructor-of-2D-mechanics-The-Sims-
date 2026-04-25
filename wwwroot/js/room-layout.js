@@ -9,3 +9,11 @@ window.simsDownloadText = (fileName, text) => {
     a.remove();
     URL.revokeObjectURL(url);
 };
+
+window.simsGetRelativePos = (element, clientX, clientY) => {
+    const rect = element.getBoundingClientRect();
+    return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+    };
+};

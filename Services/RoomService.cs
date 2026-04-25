@@ -15,6 +15,9 @@ public sealed class RoomService
     private readonly decimal? _budgetLimit;
     private bool _initialized;
     private readonly List<ItemTemplate> _catalog;
+    private DragSnapshot? _drag;
+    private bool _isDragging;
+    private bool _isDragValid;
 
     public RoomService(PlacementValidator placement, IOptions<RoomSettings> roomOptions)
     {
@@ -42,6 +45,14 @@ public sealed class RoomService
     public string? StatusMessage { get; private set; }
 
     public void SetStatus(string? message) => StatusMessage = message;
+
+    public bool SnapToGrid { get; set; } = true;
+
+    public float GridStepMeters { get; set; } = 0.25f;
+
+    public bool IsDragging => _isDragging;
+
+    public bool IsDragValid => _isDragValid;
 
     public void EnsureSampleRoom()
     {
@@ -126,6 +137,12 @@ public sealed class RoomService
             return false;
         }
 
+        if (SnapToGrid)
+        {
+            x = Snap(x, GridStepMeters);
+            y = Snap(y, GridStepMeters);
+        }
+
         if (!_placement.IsValidPosition(selected, x, y, WidthUnits, HeightUnits, _items))
         {
             StatusMessage = "Invalid position.";
@@ -160,6 +177,78 @@ public sealed class RoomService
 
         StatusMessage = $"{selected.Name}: {selected.Rotation} deg";
         return true;
+    }
+
+    public bool BeginDragSelected()
+    {
+        var selected = GetSelected();
+        if (selected is null)
+            return false;
+
+        _drag = new DragSnapshot(selected.X, selected.Y, selected.Width, selected.Height, selected.Rotation, selected.IsPlaced);
+        _isDragging = true;
+        _isDragValid = true;
+        StatusMessage = null;
+        return true;
+    }
+
+    public void CancelDrag()
+    {
+        var selected = GetSelected();
+        if (selected is null || _drag is null)
+            return;
+
+        selected.RestoreFromSnapshot(_drag.X, _drag.Y, _drag.Width, _drag.Height, _drag.Rotation, _drag.Placed);
+        _isDragging = false;
+        _isDragValid = true;
+        _drag = null;
+    }
+
+    public bool UpdateDrag(float x, float y)
+    {
+        var selected = GetSelected();
+        if (selected is null || !_isDragging || _drag is null)
+            return false;
+
+        if (SnapToGrid)
+        {
+            x = Snap(x, GridStepMeters);
+            y = Snap(y, GridStepMeters);
+        }
+
+        _isDragValid = _placement.IsValidPosition(selected, x, y, WidthUnits, HeightUnits, _items);
+        selected.RestoreFromSnapshot(x, y, selected.Width, selected.Height, selected.Rotation, placed: true);
+        return _isDragValid;
+    }
+
+    public bool EndDrag(bool commit)
+    {
+        if (!_isDragging)
+            return false;
+
+        var selected = GetSelected();
+        if (selected is null || _drag is null)
+        {
+            _isDragging = false;
+            _isDragValid = true;
+            _drag = null;
+            return false;
+        }
+
+        if (!commit || !_isDragValid)
+        {
+            selected.RestoreFromSnapshot(_drag.X, _drag.Y, _drag.Width, _drag.Height, _drag.Rotation, _drag.Placed);
+            StatusMessage = "Invalid position.";
+        }
+        else
+        {
+            StatusMessage = $"{selected.Name}: moved";
+        }
+
+        _isDragging = false;
+        _isDragValid = true;
+        _drag = null;
+        return commit;
     }
 
     public decimal GetTotalPrice()
@@ -329,4 +418,14 @@ public sealed class RoomService
     }
 
     public sealed record ItemTemplate(string Id, string Title, string Category, Func<RoomItem> Factory);
+
+    private static float Snap(float value, float step)
+    {
+        if (step <= 0f)
+            return value;
+
+        return MathF.Round(value / step) * step;
+    }
+
+    private sealed record DragSnapshot(float X, float Y, float Width, float Height, int Rotation, bool Placed);
 }
