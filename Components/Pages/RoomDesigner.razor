@@ -3,22 +3,29 @@
 
 @using System.Drawing
 @using System.Globalization
+@using SimsConstructor.Models.Building
 @using SimsConstructor.Models
 @using SimsConstructor.Models.Interfaces
 @using SimsConstructor.Models.Items
 @using SimsConstructor.Services
 
 @inject RoomService Room
+@inject BuildService Build
 @inject IJSRuntime JS
 
 <PageTitle>Room designer</PageTitle>
 
 <h1 class="mb-3">Room designer</h1>
-<p class="text-muted small mb-4">Select an item, set X/Y, place or rotate.</p>
+<p class="text-muted small mb-3">Use tool mode: move items, build walls, or preview rooms.</p>
 
 @if (!string.IsNullOrEmpty(Room.StatusMessage))
 {
     <div class="alert alert-secondary py-2 small mb-3" role="status">@Room.StatusMessage</div>
+}
+
+@if (!string.IsNullOrEmpty(Build.StatusMessage))
+{
+    <div class="alert alert-light py-2 small mb-3" role="status">@Build.StatusMessage</div>
 }
 
 <div class="room-designer">
@@ -27,14 +34,34 @@
              @ref="_canvasRef"
              style="width: @(RoomWidthPx)px; height: @(RoomHeightPx)px;"
              @onclick="ClearSelection"
+             @onmousedown="OnCanvasMouseDown"
              @onmousemove="OnCanvasMouseMove"
              @onmouseup="OnCanvasMouseUp"
              @onmouseleave="OnCanvasMouseLeave">
+            @foreach (var room in Build.Rooms)
+            {
+                <div class="room-area"
+                     title="Room @room.Index (@room.Area.ToString("0.##", CultureInfo.InvariantCulture)) m²"
+                     style="@RoomAreaStyle(room)"></div>
+            }
+
+            @foreach (var wall in Build.Walls)
+            {
+                <div class="wall-seg @(wall.Orientation == WallOrientation.Horizontal ? "wall-seg--h" : "wall-seg--v")"
+                     style="@WallSegStyle(wall)"></div>
+            }
+
+            @if (_toolMode == ToolMode.BuildWalls && _wallDragging && _wallPreview is not null)
+            {
+                <div class="wall-seg wall-seg--preview"
+                     style="@WallSegStyle(_wallPreview)"></div>
+            }
+
             @foreach (var item in Room.Items)
             {
                 <button type="button"
                         @key="item.Id"
-                        class="room-item @(item.IsSelected ? "room-item--selected" : null) @((item.IsSelected && Room.IsDragging && !Room.IsDragValid) ? "room-item--invalid" : null)"
+                        class="room-item @(item.IsSelected ? "room-item--selected" : null) @((item.IsSelected && Room.IsDragging && !Room.IsDragValid) ? "room-item--invalid" : null) @(_toolMode == ToolMode.BuildWalls ? "room-item--disabled" : null)"
                         style="@ItemButtonStyle(item)"
                         title="@item.Name"
                         @onclick:stopPropagation="true"
@@ -78,6 +105,62 @@
                 </div>
             </div>
         }
+
+        <div class="card mb-3">
+            <div class="card-header">Tools</div>
+            <div class="card-body">
+                <div class="btn-group btn-group-sm" role="group" aria-label="Tool mode">
+                    <button type="button"
+                            class="btn btn-outline-primary @( _toolMode == ToolMode.MoveItems ? "active" : null)"
+                            @onclick="() => SetToolMode(ToolMode.MoveItems)">
+                        Move items
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-primary @( _toolMode == ToolMode.BuildWalls ? "active" : null)"
+                            @onclick="() => SetToolMode(ToolMode.BuildWalls)">
+                        Build walls
+                    </button>
+                </div>
+
+                <div class="form-check form-switch mt-3">
+                    <input class="form-check-input"
+                           type="checkbox"
+                           role="switch"
+                           id="eraseWalls"
+                           @bind="_eraseWalls"
+                           disabled="@(_toolMode != ToolMode.BuildWalls)" />
+                    <label class="form-check-label small" for="eraseWalls">Erase walls</label>
+                </div>
+
+                <div class="small text-muted mt-2">
+                    Walls grid: @Build.GridStepMeters.ToString("0.##", CultureInfo.InvariantCulture) m
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Rooms</span>
+                <span class="badge text-bg-light">@Build.Rooms.Count</span>
+            </div>
+            <div class="card-body p-2">
+                @if (Build.Rooms.Count == 0)
+                {
+                    <div class="text-muted small">Draw closed walls to detect rooms.</div>
+                }
+                else
+                {
+                    <div class="list-group list-group-flush">
+                        @foreach (var room in Build.Rooms)
+                        {
+                            <div class="list-group-item small py-2 px-2">
+                                Room @room.Index: @room.Area.ToString("0.##", CultureInfo.InvariantCulture) m²
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
 
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
@@ -140,6 +223,12 @@
                     <div><span class="text-muted">Size:</span> @selected.Width.ToString("0.##", CultureInfo.InvariantCulture) × @selected.Height.ToString("0.##", CultureInfo.InvariantCulture) m</div>
                     <div><span class="text-muted">Rotation:</span> @selected.Rotation°</div>
                     <div><span class="text-muted">Placed:</span> @(selected.IsPlaced ? "Yes" : "No")</div>
+                    @{
+                        var selectedCenterX = selected.X + selected.Width / 2f;
+                        var selectedCenterY = selected.Y + selected.Height / 2f;
+                        var selectedRoom = Build.GetRoomAt(selectedCenterX, selectedCenterY);
+                    }
+                    <div><span class="text-muted">Room:</span> @(selectedRoom is null ? "None" : selectedRoom.Index.ToString(CultureInfo.InvariantCulture))</div>
                     <div class="d-grid mt-2">
                         <button type="button" class="btn btn-outline-danger btn-sm" @onclick="DeleteSelected">
                             Delete selected
@@ -189,6 +278,22 @@
 @code {
     private const float ScalePxPerUnit = 50f;
 
+    private enum ToolMode
+    {
+        MoveItems,
+        BuildWalls
+    }
+
+    private ToolMode _toolMode = ToolMode.MoveItems;
+    private bool _eraseWalls;
+
+    private const float WallThicknessPx = 8f;
+
+    private bool _wallDragging;
+    private float _wallStartX;
+    private float _wallStartY;
+    private WallSegment? _wallPreview;
+
     private string _placeX = "0";
     private string _placeY = "0";
     private string _gridStep = "0.25";
@@ -203,17 +308,37 @@
     protected override void OnInitialized()
     {
         Room.EnsureSampleRoom();
+        Build.GridStepMeters = Room.GridStepMeters;
         SyncInputsFromSelection();
+    }
+
+    private void SetToolMode(ToolMode mode)
+    {
+        _toolMode = mode;
+        if (_toolMode == ToolMode.BuildWalls)
+        {
+            Room.ClearSelection();
+            _placeX = "0";
+            _placeY = "0";
+        }
+
+        StateHasChanged();
     }
 
     private void Select(RoomItem item)
     {
+        if (_toolMode != ToolMode.MoveItems)
+            return;
+
         Room.Select(item);
         SyncInputsFromSelection();
     }
 
     private async Task StartDrag(RoomItem item, MouseEventArgs e)
     {
+        if (_toolMode != ToolMode.MoveItems)
+            return;
+
         Room.Select(item);
         SyncInputsFromSelection();
 
@@ -226,8 +351,39 @@
         _dragging = true;
     }
 
+    private async Task OnCanvasMouseDown(MouseEventArgs e)
+    {
+        if (_toolMode != ToolMode.BuildWalls)
+            return;
+
+        if (e.Button != 0)
+            return;
+
+        var pos = await GetCanvasPos(e.ClientX, e.ClientY);
+        var x = pos.X / ScalePxPerUnit;
+        var y = pos.Y / ScalePxPerUnit;
+
+        _wallDragging = true;
+        _wallStartX = SnapToWallGrid(x);
+        _wallStartY = SnapToWallGrid(y);
+        UpdateWallPreview(x, y);
+    }
+
     private async Task OnCanvasMouseMove(MouseEventArgs e)
     {
+        if (_toolMode == ToolMode.BuildWalls)
+        {
+            if (!_wallDragging)
+                return;
+
+            var pos2 = await GetCanvasPos(e.ClientX, e.ClientY);
+            var x2 = pos2.X / ScalePxPerUnit;
+            var y2 = pos2.Y / ScalePxPerUnit;
+            UpdateWallPreview(x2, y2);
+            StateHasChanged();
+            return;
+        }
+
         if (!_dragging)
             return;
 
@@ -241,6 +397,18 @@
 
     private void OnCanvasMouseUp()
     {
+        if (_toolMode == ToolMode.BuildWalls)
+        {
+            if (!_wallDragging)
+                return;
+
+            _wallDragging = false;
+            TryCommitWallPreview();
+            _wallPreview = null;
+            StateHasChanged();
+            return;
+        }
+
         if (!_dragging)
             return;
 
@@ -251,6 +419,17 @@
 
     private void OnCanvasMouseLeave()
     {
+        if (_toolMode == ToolMode.BuildWalls)
+        {
+            if (!_wallDragging)
+                return;
+
+            _wallDragging = false;
+            _wallPreview = null;
+            StateHasChanged();
+            return;
+        }
+
         if (!_dragging)
             return;
 
@@ -259,8 +438,107 @@
         SyncInputsFromSelection();
     }
 
+    private float SnapToWallGrid(float value)
+    {
+        var step = Build.GridStepMeters;
+        if (step <= 0f)
+            return value;
+
+        return MathF.Round(value / step) * step;
+    }
+
+    private static float Clamp(float value, float min, float max) =>
+        value < min ? min : (value > max ? max : value);
+
+    private void UpdateWallPreview(float currentX, float currentY)
+    {
+        if (!_wallDragging)
+            return;
+
+        var step = Build.GridStepMeters;
+        if (step <= 0f)
+        {
+            _wallPreview = null;
+            return;
+        }
+
+        var sx = _wallStartX;
+        var sy = _wallStartY;
+
+        var cx = SnapToWallGrid(currentX);
+        var cy = SnapToWallGrid(currentY);
+
+        cx = Clamp(cx, 0f, Build.RoomWidthUnits);
+        cy = Clamp(cy, 0f, Build.RoomHeightUnits);
+
+        var dx = cx - sx;
+        var dy = cy - sy;
+
+        if (MathF.Abs(dx) < step * 0.25f && MathF.Abs(dy) < step * 0.25f)
+        {
+            _wallPreview = null;
+            return;
+        }
+
+        if (MathF.Abs(dx) >= MathF.Abs(dy))
+        {
+            // Horizontal wall
+            var xMin = MathF.Min(sx, cx);
+            var xMax = MathF.Max(sx, cx);
+            if (xMax - xMin < step * 0.5f)
+            {
+                _wallPreview = null;
+                return;
+            }
+
+            _wallPreview = new WallSegment(WallOrientation.Horizontal, xMin, sy, xMax, sy);
+        }
+        else
+        {
+            // Vertical wall
+            var yMin = MathF.Min(sy, cy);
+            var yMax = MathF.Max(sy, cy);
+            if (yMax - yMin < step * 0.5f)
+            {
+                _wallPreview = null;
+                return;
+            }
+
+            _wallPreview = new WallSegment(WallOrientation.Vertical, sx, yMin, sx, yMax);
+        }
+    }
+
+    private void TryCommitWallPreview()
+    {
+        if (_wallPreview is null)
+            return;
+
+        var x1 = _wallPreview.X1;
+        var y1 = _wallPreview.Y1;
+        var x2 = _wallPreview.X2;
+        var y2 = _wallPreview.Y2;
+
+        if (_eraseWalls)
+        {
+            if (!Build.TryEraseWallSegment(x1, y1, x2, y2, out var err))
+                Build.SetStatus(err ?? "Cannot erase wall.");
+            else
+                Build.SetStatus("Wall erased.");
+        }
+        else
+        {
+            if (!Build.TryAddWallSegment(x1, y1, x2, y2, out var err))
+                Build.SetStatus(err ?? "Cannot add wall.");
+            else
+                Build.SetStatus("Wall added.");
+        }
+    }
+
     private void ClearSelection()
     {
+        if (_toolMode != ToolMode.MoveItems)
+            return;
+
         Room.ClearSelection();
         SyncInputsFromSelection();
     }
@@ -297,6 +575,7 @@
         if (float.TryParse(_gridStep, NumberStyles.Float, CultureInfo.InvariantCulture, out var step) && step > 0f)
         {
             Room.GridStepMeters = step;
+            Build.GridStepMeters = step;
             Room.SetStatus($"Grid step: {step.ToString("0.##", CultureInfo.InvariantCulture)} m");
         }
         else
@@ -355,6 +634,38 @@
         }
 
         StateHasChanged();
+    }
+
+    private string RoomAreaStyle(RoomArea room) =>
+        $"left:{(room.X * ScalePxPerUnit).ToString(CultureInfo.InvariantCulture)}px;" +
+        $"top:{(room.Y * ScalePxPerUnit).ToString(CultureInfo.InvariantCulture)}px;" +
+        $"width:{(room.Width * ScalePxPerUnit).ToString(CultureInfo.InvariantCulture)}px;" +
+        $"height:{(room.Height * ScalePxPerUnit).ToString(CultureInfo.InvariantCulture)}px;";
+
+    private string WallSegStyle(WallSegment wall)
+    {
+        var half = WallThicknessPx / 2f;
+        if (wall.Orientation == WallOrientation.Horizontal)
+        {
+            var left = wall.MinX * ScalePxPerUnit;
+            var top = wall.Y1 * ScalePxPerUnit - half;
+            var width = wall.Length * ScalePxPerUnit;
+            return $"left:{left.ToString(CultureInfo.InvariantCulture)}px;" +
+                   $"top:{top.ToString(CultureInfo.InvariantCulture)}px;" +
+                   $"width:{width.ToString(CultureInfo.InvariantCulture)}px;" +
+                   $"height:{WallThicknessPx.ToString(CultureInfo.InvariantCulture)}px;";
+        }
+
+        // Vertical
+        {
+            var left = wall.X1 * ScalePxPerUnit - half;
+            var top = wall.MinY * ScalePxPerUnit;
+            var height = wall.Length * ScalePxPerUnit;
+            return $"left:{left.ToString(CultureInfo.InvariantCulture)}px;" +
+                   $"top:{top.ToString(CultureInfo.InvariantCulture)}px;" +
+                   $"width:{WallThicknessPx.ToString(CultureInfo.InvariantCulture)}px;" +
+                   $"height:{height.ToString(CultureInfo.InvariantCulture)}px;";
+        }
     }
 
     private static string KindLabel(RoomItem item) => item switch

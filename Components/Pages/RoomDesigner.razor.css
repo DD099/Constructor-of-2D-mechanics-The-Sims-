@@ -53,6 +53,32 @@
     border-color: rgba(220, 53, 69, 0.9);
 }
 
+.room-item--disabled {
+    pointer-events: none;
+    opacity: 0.55;
+}
+
+.room-area {
+    position: absolute;
+    z-index: 0;
+    pointer-events: none;
+    background: rgba(25, 135, 84, 0.08);
+    border: 1px dashed rgba(25, 135, 84, 0.35);
+    box-sizing: border-box;
+}
+
+.wall-seg {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+    background: rgba(33, 37, 41, 0.65);
+    border-radius: 1px;
+}
+
+.wall-seg--preview {
+    background: rgba(13, 110, 253, 0.5);
+}
+
 .room-designer__sidebar {
     flex: 0 0 280px;
     max-width: 100%;

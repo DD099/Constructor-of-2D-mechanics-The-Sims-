@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<RoomSettings>(builder.Configuration.GetSection(RoomSettings.SectionName));
 builder.Services.AddSingleton<PlacementValidator>();
 builder.Services.AddScoped<RoomService>();
+builder.Services.AddScoped<BuildService>();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
