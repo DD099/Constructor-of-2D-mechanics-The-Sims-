@@ -32,7 +32,7 @@
     <div class="room-designer__preview">
         <div class="room-designer__canvas"
              @ref="_canvasRef"
-             style="width: @(RoomWidthPx)px; height: @(RoomHeightPx)px;"
+             style="width: @(RoomWidthPx)px; height: @(RoomHeightPx)px; background-size: @(ScalePxPerUnit)px @(ScalePxPerUnit)px;"
              @onclick="ClearSelection"
              @onmousedown="OnCanvasMouseDown"
              @onmousemove="OnCanvasMouseMove"
@@ -134,6 +134,18 @@
 
                 <div class="small text-muted mt-2">
                     Walls grid: @Build.GridStepMeters.ToString("0.##", CultureInfo.InvariantCulture) m
+                </div>
+
+                <div class="mt-3">
+                    <label class="form-label small mb-1" for="zoom">Zoom</label>
+                    <input id="zoom"
+                           class="form-range"
+                           type="range"
+                           min="40"
+                           max="120"
+                           step="5"
+                           @bind="_scalePxPerUnit" />
+                    <div class="small text-muted">@_scalePxPerUnit px/m</div>
                 </div>
             </div>
         </div>
@@ -276,7 +288,9 @@
 </div>
 
 @code {
-    private const float ScalePxPerUnit = 50f;
+    private float _scalePxPerUnit = 80f;
+
+    private float ScalePxPerUnit => _scalePxPerUnit;
 
     private enum ToolMode
     {
