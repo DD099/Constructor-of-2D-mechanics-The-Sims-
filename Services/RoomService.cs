@@ -12,6 +12,7 @@ public sealed class RoomService
 {
     private readonly List<RoomItem> _items = [];
     private readonly PlacementValidator _placement;
+    private readonly BuildService _build;
     private readonly decimal? _budgetLimit;
     private bool _initialized;
     private readonly List<ItemTemplate> _catalog;
@@ -19,9 +20,10 @@ public sealed class RoomService
     private bool _isDragging;
     private bool _isDragValid;
 
-    public RoomService(PlacementValidator placement, IOptions<RoomSettings> roomOptions)
+    public RoomService(PlacementValidator placement, BuildService build, IOptions<RoomSettings> roomOptions)
     {
         _placement = placement;
+        _build = build;
         var r = roomOptions.Value;
         WidthUnits = r.WidthMeters > 0f ? r.WidthMeters : 6f;
         HeightUnits = r.HeightMeters > 0f ? r.HeightMeters : 4f;
@@ -143,7 +145,7 @@ public sealed class RoomService
             y = Snap(y, GridStepMeters);
         }
 
-        if (!_placement.IsValidPosition(selected, x, y, WidthUnits, HeightUnits, _items))
+        if (!_placement.IsValidPosition(selected, x, y, WidthUnits, HeightUnits, _items, _build.GetWallObstacleBounds()))
         {
             StatusMessage = "Invalid position.";
             return false;
@@ -166,7 +168,7 @@ public sealed class RoomService
 
         selected.Rotate90();
 
-        if (!_placement.IsValidPosition(selected, selected.X, selected.Y, WidthUnits, HeightUnits, _items))
+        if (!_placement.IsValidPosition(selected, selected.X, selected.Y, WidthUnits, HeightUnits, _items, _build.GetWallObstacleBounds()))
         {
             selected.Rotate90();
             selected.Rotate90();
@@ -216,7 +218,7 @@ public sealed class RoomService
             y = Snap(y, GridStepMeters);
         }
 
-        _isDragValid = _placement.IsValidPosition(selected, x, y, WidthUnits, HeightUnits, _items);
+        _isDragValid = _placement.IsValidPosition(selected, x, y, WidthUnits, HeightUnits, _items, _build.GetWallObstacleBounds());
         selected.RestoreFromSnapshot(x, y, selected.Width, selected.Height, selected.Rotation, placed: true);
         return _isDragValid;
     }
@@ -276,6 +278,15 @@ public sealed class RoomService
         var item = template.Factory();
         item.RestoreFromSnapshot(0f, 0f, item.Width, item.Height, 0, placed: false);
         _items.Add(item);
+
+        if (!TryFindFirstFreePlacement(item, out var fx, out var fy))
+        {
+            _items.Remove(item);
+            StatusMessage = "No free space for this item.";
+            return false;
+        }
+
+        item.PlaceAt(fx, fy);
         Select(item);
         StatusMessage = $"Added: {item.Name}";
         return true;
@@ -300,7 +311,7 @@ public sealed class RoomService
 
     public bool TryImportLayoutJson(string json, out string? error)
     {
-        if (!RoomLayoutSerializer.TryDeserialize(json, WidthUnits, HeightUnits, _placement, out var list, out error))
+        if (!RoomLayoutSerializer.TryDeserialize(json, WidthUnits, HeightUnits, _placement, _build.GetWallObstacleBounds(), out var list, out error))
             return false;
 
         foreach (var i in _items)
@@ -425,6 +436,29 @@ public sealed class RoomService
             return value;
 
         return MathF.Round(value / step) * step;
+    }
+
+    private bool TryFindFirstFreePlacement(RoomItem item, out float x, out float y)
+    {
+        var step = GridStepMeters > 0f ? GridStepMeters : 0.25f;
+        var walls = _build.GetWallObstacleBounds();
+
+        for (var yy = 0f; yy + item.Height <= HeightUnits + 1e-4f; yy += step)
+        {
+            for (var xx = 0f; xx + item.Width <= WidthUnits + 1e-4f; xx += step)
+            {
+                if (_placement.IsValidPosition(item, xx, yy, WidthUnits, HeightUnits, _items, walls))
+                {
+                    x = xx;
+                    y = yy;
+                    return true;
+                }
+            }
+        }
+
+        x = 0f;
+        y = 0f;
+        return false;
     }
 
     private sealed record DragSnapshot(float X, float Y, float Width, float Height, int Rotation, bool Placed);

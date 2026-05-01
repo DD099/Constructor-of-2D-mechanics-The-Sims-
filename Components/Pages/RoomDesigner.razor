@@ -1,5 +1,6 @@
 @page "/designer"
 @rendermode InteractiveServer
+@implements IDisposable
 
 @using System.Drawing
 @using System.Globalization
@@ -15,9 +16,7 @@
 
 <PageTitle>Room designer</PageTitle>
 
-<h1 class="mb-3">Room designer</h1>
-<p class="text-muted small mb-3">Use tool mode: move items, build walls, or preview rooms.</p>
-
+<div class="room-designer-page" @ref="_fullscreenRoot">
 @if (!string.IsNullOrEmpty(Room.StatusMessage))
 {
     <div class="alert alert-secondary py-2 small mb-3" role="status">@Room.StatusMessage</div>
@@ -27,6 +26,16 @@
 {
     <div class="alert alert-light py-2 small mb-3" role="status">@Build.StatusMessage</div>
 }
+
+<div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+    <div>
+        <h1 class="mb-1">Room designer</h1>
+        <p class="text-muted small mb-0">Use tool mode: move items, build walls, or preview rooms.</p>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ToggleFullscreen">
+        @(_isFullscreen ? "Exit fullscreen" : "Fullscreen")
+    </button>
+</div>
 
 <div class="room-designer">
     <div class="room-designer__preview">
@@ -61,13 +70,16 @@
             {
                 <button type="button"
                         @key="item.Id"
-                        class="room-item @(item.IsSelected ? "room-item--selected" : null) @((item.IsSelected && Room.IsDragging && !Room.IsDragValid) ? "room-item--invalid" : null) @(_toolMode == ToolMode.BuildWalls ? "room-item--disabled" : null)"
+                        class="room-item room-item--visual @(IsWideFlatItem(item) ? "room-item--flat" : null) @(item.IsSelected ? "room-item--selected" : null) @((item.IsSelected && Room.IsDragging && !Room.IsDragValid) ? "room-item--invalid" : null) @(_toolMode == ToolMode.BuildWalls ? "room-item--disabled" : null)"
                         style="@ItemButtonStyle(item)"
                         title="@item.Name"
                         @onclick:stopPropagation="true"
                         @onclick="@(() => Select(item))"
                         @onmousedown:stopPropagation="true"
                         @onmousedown="@((e) => StartDrag(item, e))">
+                    <span class="room-item__artwrap" style="transform: rotate(@(item.Rotation)deg);">
+                        <img class="room-item__art" src="@ItemArtSrc(item)" alt="" loading="lazy" draggable="false" />
+                    </span>
                     <span class="visually-hidden">@item.Name</span>
                 </button>
             }
@@ -142,10 +154,10 @@
                            class="form-range"
                            type="range"
                            min="40"
-                           max="120"
+                           max="200"
                            step="5"
                            @bind="_scalePxPerUnit" />
-                    <div class="small text-muted">@_scalePxPerUnit px/m</div>
+                    <div class="small text-muted">@_scalePxPerUnit.ToString("0", CultureInfo.InvariantCulture) px/m (@ZoomPercentLabel)</div>
                 </div>
             </div>
         </div>
@@ -286,11 +298,22 @@
         </div>
     </aside>
 </div>
+</div>
 
 @code {
+    private ElementReference _fullscreenRoot;
+    private bool _isFullscreen;
+    private DotNetObjectReference<RoomDesigner>? _fullscreenDotNetRef;
+
     private float _scalePxPerUnit = 80f;
 
+    /// <summary>Baseline scale used for the zoom percentage label (100% = default view).</summary>
+    private const float DefaultScalePxPerUnit = 80f;
+
     private float ScalePxPerUnit => _scalePxPerUnit;
+
+    private string ZoomPercentLabel =>
+        (_scalePxPerUnit / DefaultScalePxPerUnit * 100f).ToString("0", CultureInfo.InvariantCulture) + "%";
 
     private enum ToolMode
     {
@@ -325,6 +348,28 @@
         Build.GridStepMeters = Room.GridStepMeters;
         SyncInputsFromSelection();
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        _fullscreenDotNetRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("simsFullscreenInit", _fullscreenDotNetRef);
+    }
+
+    private async Task ToggleFullscreen() =>
+        await JS.InvokeVoidAsync("simsToggleDesignerFullscreen", _fullscreenRoot);
+
+    [JSInvokable]
+    public void SetFullscreenState(bool isFullscreen)
+    {
+        _isFullscreen = isFullscreen;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() =>
+        _fullscreenDotNetRef?.Dispose();
 
     private void SetToolMode(ToolMode mode)
     {
@@ -541,11 +586,25 @@
         }
         else
         {
-            if (!Build.TryAddWallSegment(x1, y1, x2, y2, out var err))
+            if (!Build.TryAddWallSegment(x1, y1, x2, y2, out var err, GetPlacedItemBoundsForWallCheck()))
                 Build.SetStatus(err ?? "Cannot add wall.");
             else
                 Build.SetStatus("Wall added.");
         }
+    }
+
+    private IReadOnlyList<RectangleF>? GetPlacedItemBoundsForWallCheck()
+    {
+        List<RectangleF>? list = null;
+        foreach (var item in Room.Items)
+        {
+            if (!item.IsPlaced)
+                continue;
+            list ??= [];
+            list.Add(item.GetRenderBounds());
+        }
+
+        return list;
     }
 
     private void ClearSelection()
@@ -711,8 +770,32 @@
                $"top:{top.ToString(CultureInfo.InvariantCulture)}px;" +
                $"width:{w.ToString(CultureInfo.InvariantCulture)}px;" +
                $"height:{h.ToString(CultureInfo.InvariantCulture)}px;" +
-               $"--item-fill:{fill};";
+               $"--item-fill:{fill};" +
+               $"border-color:{fill};";
     }
+
+    private static bool IsWideFlatItem(RoomItem item) =>
+        item.Height > 1e-4f && item.Width / item.Height >= 2.5f;
+
+    private static string ItemArtSrc(RoomItem item) => item switch
+    {
+        FurnitureItem f => f.Category switch
+        {
+            FurnitureCategory.Bed => "/assets/furniture/bed.svg",
+            FurnitureCategory.Seating => "/assets/furniture/sofa.svg",
+            FurnitureCategory.Table => "/assets/furniture/table.svg",
+            FurnitureCategory.Storage => "/assets/furniture/storage.svg",
+            FurnitureCategory.Surface => "/assets/furniture/surface.svg",
+            _ => "/assets/furniture/generic.svg"
+        },
+        ApplianceItem a => a.Name.Contains("Fridge", StringComparison.OrdinalIgnoreCase)
+            ? "/assets/furniture/fridge.svg"
+            : "/assets/furniture/tv.svg",
+        DecorationItem d => d.Name.Contains("Rug", StringComparison.OrdinalIgnoreCase)
+            ? "/assets/furniture/rug.svg"
+            : "/assets/furniture/painting.svg",
+        _ => "/assets/furniture/generic.svg"
+    };
 
     private static string Rgb(Color color) =>
         $"rgb({color.R}, {color.G}, {color.B})";

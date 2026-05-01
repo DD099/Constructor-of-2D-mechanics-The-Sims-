@@ -17,3 +17,23 @@ window.simsGetRelativePos = (element, clientX, clientY) => {
         y: clientY - rect.top
     };
 };
+
+window.simsFullscreenInit = (dotNetRef) => {
+    const handler = () => {
+        dotNetRef.invokeMethodAsync('SetFullscreenState', !!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handler);
+};
+
+window.simsToggleDesignerFullscreen = async (element) => {
+    if (!element) return;
+    try {
+        if (document.fullscreenElement === element) {
+            await document.exitFullscreen();
+        } else if (element.requestFullscreen) {
+            await element.requestFullscreen();
+        }
+    } catch (e) {
+        console.warn('fullscreen', e);
+    }
+};

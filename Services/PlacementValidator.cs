@@ -11,12 +11,22 @@ public sealed class PlacementValidator
         float y,
         float roomWidth,
         float roomHeight,
-        IEnumerable<RoomItem> allItems)
+        IEnumerable<RoomItem> allItems,
+        IReadOnlyList<RectangleF>? wallObstacles = null)
     {
         if (!FitsInsideRoom(candidate, x, y, roomWidth, roomHeight))
             return false;
 
         var proposed = BoundsAt(candidate, x, y);
+
+        if (wallObstacles is { Count: > 0 })
+        {
+            foreach (var wall in wallObstacles)
+            {
+                if (proposed.IntersectsWith(wall))
+                    return false;
+            }
+        }
 
         foreach (var other in allItems)
         {

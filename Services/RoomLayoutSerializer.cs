@@ -38,6 +38,7 @@ public static class RoomLayoutSerializer
         float roomWidth,
         float roomHeight,
         PlacementValidator placement,
+        IReadOnlyList<RectangleF>? wallObstacles,
         out List<RoomItem>? items,
         out string? error)
     {
@@ -77,9 +78,9 @@ public static class RoomLayoutSerializer
 
         foreach (var a in list)
         {
-            if (!placement.IsValidPosition(a, a.X, a.Y, roomWidth, roomHeight, list))
+            if (!placement.IsValidPosition(a, a.X, a.Y, roomWidth, roomHeight, list, wallObstacles))
             {
-                error = "Layout does not fit the room or items overlap.";
+                error = "Layout does not fit the room, overlaps walls, or items overlap.";
                 return false;
             }
         }

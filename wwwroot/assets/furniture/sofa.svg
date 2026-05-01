@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 72" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="sofaFabric" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4F6F52"/>
+      <stop offset="100%" stop-color="#2F4A32"/>
+    </linearGradient>
+    <linearGradient id="sofaCushion" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6FA374"/>
+      <stop offset="100%" stop-color="#3D5C40"/>
+    </linearGradient>
+  </defs>
+  <!-- base -->
+  <rect x="10" y="38" width="100" height="26" rx="8" fill="url(#sofaFabric)" stroke="#1e2e20" stroke-width="1.2"/>
+  <!-- back -->
+  <rect x="10" y="14" width="100" height="28" rx="8" fill="url(#sofaFabric)" stroke="#1e2e20" stroke-width="1.2"/>
+  <!-- seat cushions -->
+  <rect x="16" y="36" width="40" height="18" rx="6" fill="url(#sofaCushion)" stroke="#2a3f2c" stroke-width="0.9"/>
+  <rect x="64" y="36" width="40" height="18" rx="6" fill="url(#sofaCushion)" stroke="#2a3f2c" stroke-width="0.9"/>
+  <!-- back cushions -->
+  <rect x="18" y="18" width="36" height="20" rx="6" fill="url(#sofaCushion)" stroke="#2a3f2c" stroke-width="0.9"/>
+  <rect x="66" y="18" width="36" height="20" rx="6" fill="url(#sofaCushion)" stroke="#2a3f2c" stroke-width="0.9"/>
+  <!-- arms -->
+  <rect x="4" y="22" width="12" height="40" rx="4" fill="url(#sofaFabric)" stroke="#1e2e20" stroke-width="1"/>
+  <rect x="104" y="22" width="12" height="40" rx="4" fill="url(#sofaFabric)" stroke="#1e2e20" stroke-width="1"/>
+</svg>

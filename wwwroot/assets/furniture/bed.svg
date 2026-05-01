@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="bedWood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8B5A2B"/>
+      <stop offset="100%" stop-color="#5C3D1E"/>
+    </linearGradient>
+    <linearGradient id="bedMattress" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E8EEF5"/>
+      <stop offset="100%" stop-color="#B8C5D6"/>
+    </linearGradient>
+  </defs>
+  <!-- headboard (top) -->
+  <rect x="8" y="4" width="104" height="14" rx="3" fill="url(#bedWood)" stroke="#3d2814" stroke-width="1"/>
+  <rect x="12" y="7" width="96" height="8" rx="2" fill="#6b4423" opacity="0.35"/>
+  <!-- mattress -->
+  <rect x="10" y="20" width="100" height="52" rx="6" fill="url(#bedMattress)" stroke="#7a8aa3" stroke-width="1.2"/>
+  <!-- pillow -->
+  <rect x="22" y="26" width="76" height="14" rx="5" fill="#f5f7fb" stroke="#9aa8bc" stroke-width="1"/>
+  <!-- quilt fold -->
+  <path d="M18 44 C40 38 80 38 102 44 L102 66 C80 60 40 60 18 66 Z" fill="#d4dce8" stroke="#8a9ab0" stroke-width="0.8" opacity="0.9"/>
+  <!-- legs hint -->
+  <rect x="16" y="72" width="6" height="4" rx="1" fill="#4a3520"/>
+  <rect x="98" y="72" width="6" height="4" rx="1" fill="#4a3520"/>
+</svg>

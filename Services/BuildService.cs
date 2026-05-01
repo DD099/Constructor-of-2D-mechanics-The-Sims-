@@ -1,3 +1,4 @@
+using System.Drawing;
 using Microsoft.Extensions.Options;
 using SimsConstructor.Models.Building;
 using SimsConstructor.Options;
@@ -6,6 +7,9 @@ namespace SimsConstructor.Services;
 
 public sealed class BuildService
 {
+    /// <summary>Thickness of wall collision strips (meters); must match <see cref="GetWallObstacleBounds"/> default.</summary>
+    public const float WallCollisionThicknessMeters = 0.08f;
+
     private readonly float _roomWidthUnits;
     private readonly float _roomHeightUnits;
 
@@ -68,12 +72,41 @@ public sealed class BuildService
         return null;
     }
 
+    /// <summary>
+    /// Axis-aligned bounds for wall collision (items must not overlap these rectangles).
+    /// </summary>
+    public IReadOnlyList<RectangleF> GetWallObstacleBounds(float thicknessMeters = WallCollisionThicknessMeters)
+    {
+        if (_walls.Count == 0)
+            return [];
+
+        var half = thicknessMeters * 0.5f;
+        var list = new List<RectangleF>(_walls.Count);
+        foreach (var w in _walls)
+        {
+            if (w.Orientation == WallOrientation.Horizontal)
+            {
+                var y = w.Y1;
+                list.Add(new RectangleF(w.MinX, y - half, w.MaxX - w.MinX, thicknessMeters));
+            }
+            else
+            {
+                var x = w.X1;
+                list.Add(new RectangleF(x - half, w.MinY, thicknessMeters, w.MaxY - w.MinY));
+            }
+        }
+
+        return list;
+    }
+
     public bool TryAddWallSegment(
         float x1,
         float y1,
         float x2,
         float y2,
-        out string? error)
+        out string? error,
+        IReadOnlyList<RectangleF>? placedItemBounds = null,
+        float wallThicknessMeters = WallCollisionThicknessMeters)
     {
         StatusMessage = null;
         error = null;
@@ -118,8 +151,19 @@ public sealed class BuildService
                 return false;
             }
 
-            var mergedMin = yMin;
-            var mergedMax = yMax;
+            ComputeMergedVerticalSpan(x, yMin, yMax, eps, out var mergedMin, out var mergedMax);
+
+            if (placedItemBounds is { Count: > 0 }
+                && WallStripIntersectsAnyPlacedItem(
+                    WallStripToObstacleRectVertical(x, mergedMin, mergedMax, wallThicknessMeters),
+                    placedItemBounds))
+            {
+                error = "Wall would overlap placed furniture.";
+                return false;
+            }
+
+            var mergedMinMut = mergedMin;
+            var mergedMaxMut = mergedMax;
             for (var i = _walls.Count - 1; i >= 0; i--)
             {
                 var w = _walls[i];
@@ -128,15 +172,15 @@ public sealed class BuildService
                 if (MathF.Abs(w.X1 - x) > eps)
                     continue;
 
-                if (w.MinY <= mergedMax + eps && w.MaxY >= mergedMin - eps)
+                if (w.MinY <= mergedMaxMut + eps && w.MaxY >= mergedMinMut - eps)
                 {
-                    mergedMin = MathF.Min(mergedMin, w.MinY);
-                    mergedMax = MathF.Max(mergedMax, w.MaxY);
+                    mergedMinMut = MathF.Min(mergedMinMut, w.MinY);
+                    mergedMaxMut = MathF.Max(mergedMaxMut, w.MaxY);
                     _walls.RemoveAt(i);
                 }
             }
 
-            _walls.Add(new WallSegment(WallOrientation.Vertical, x, mergedMin, x, mergedMax));
+            _walls.Add(new WallSegment(WallOrientation.Vertical, x, mergedMinMut, x, mergedMaxMut));
             _roomsDirty = true;
             return true;
         }
@@ -159,8 +203,19 @@ public sealed class BuildService
                 return false;
             }
 
-            var mergedMin = xMin;
-            var mergedMax = xMax;
+            ComputeMergedHorizontalSpan(y, xMin, xMax, eps, out var mergedMin, out var mergedMax);
+
+            if (placedItemBounds is { Count: > 0 }
+                && WallStripIntersectsAnyPlacedItem(
+                    WallStripToObstacleRectHorizontal(mergedMin, mergedMax, y, wallThicknessMeters),
+                    placedItemBounds))
+            {
+                error = "Wall would overlap placed furniture.";
+                return false;
+            }
+
+            var mergedMinMut = mergedMin;
+            var mergedMaxMut = mergedMax;
             for (var i = _walls.Count - 1; i >= 0; i--)
             {
                 var w = _walls[i];
@@ -169,18 +224,105 @@ public sealed class BuildService
                 if (MathF.Abs(w.Y1 - y) > eps)
                     continue;
 
-                if (w.MinX <= mergedMax + eps && w.MaxX >= mergedMin - eps)
+                if (w.MinX <= mergedMaxMut + eps && w.MaxX >= mergedMinMut - eps)
                 {
-                    mergedMin = MathF.Min(mergedMin, w.MinX);
-                    mergedMax = MathF.Max(mergedMax, w.MaxX);
+                    mergedMinMut = MathF.Min(mergedMinMut, w.MinX);
+                    mergedMaxMut = MathF.Max(mergedMaxMut, w.MaxX);
                     _walls.RemoveAt(i);
                 }
             }
 
-            _walls.Add(new WallSegment(WallOrientation.Horizontal, mergedMin, y, mergedMax, y));
+            _walls.Add(new WallSegment(WallOrientation.Horizontal, mergedMinMut, y, mergedMaxMut, y));
             _roomsDirty = true;
             return true;
         }
+    }
+
+    /// <summary>
+    /// Union of the new vertical segment with all same-x walls it would merge into (read-only; matches post-commit geometry).
+    /// </summary>
+    private void ComputeMergedVerticalSpan(float x, float yMin, float yMax, float eps, out float mergedMin, out float mergedMax)
+    {
+        mergedMin = MathF.Min(yMin, yMax);
+        mergedMax = MathF.Max(yMin, yMax);
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var w in _walls)
+            {
+                if (w.Orientation != WallOrientation.Vertical)
+                    continue;
+                if (MathF.Abs(w.X1 - x) > eps)
+                    continue;
+                if (w.MinY <= mergedMax + eps && w.MaxY >= mergedMin - eps)
+                {
+                    var nMin = MathF.Min(mergedMin, w.MinY);
+                    var nMax = MathF.Max(mergedMax, w.MaxY);
+                    if (nMin < mergedMin - eps || nMax > mergedMax + eps)
+                    {
+                        mergedMin = nMin;
+                        mergedMax = nMax;
+                        changed = true;
+                    }
+                }
+            }
+        } while (changed);
+    }
+
+    /// <summary>
+    /// Union of the new horizontal segment with all same-y walls it would merge into (read-only).
+    /// </summary>
+    private void ComputeMergedHorizontalSpan(float y, float xMin, float xMax, float eps, out float mergedMin, out float mergedMax)
+    {
+        mergedMin = MathF.Min(xMin, xMax);
+        mergedMax = MathF.Max(xMin, xMax);
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var w in _walls)
+            {
+                if (w.Orientation != WallOrientation.Horizontal)
+                    continue;
+                if (MathF.Abs(w.Y1 - y) > eps)
+                    continue;
+                if (w.MinX <= mergedMax + eps && w.MaxX >= mergedMin - eps)
+                {
+                    var nMin = MathF.Min(mergedMin, w.MinX);
+                    var nMax = MathF.Max(mergedMax, w.MaxX);
+                    if (nMin < mergedMin - eps || nMax > mergedMax + eps)
+                    {
+                        mergedMin = nMin;
+                        mergedMax = nMax;
+                        changed = true;
+                    }
+                }
+            }
+        } while (changed);
+    }
+
+    private static RectangleF WallStripToObstacleRectVertical(float x, float yMin, float yMax, float thicknessMeters)
+    {
+        var half = thicknessMeters * 0.5f;
+        return new RectangleF(x - half, yMin, thicknessMeters, yMax - yMin);
+    }
+
+    private static RectangleF WallStripToObstacleRectHorizontal(float xMin, float xMax, float y, float thicknessMeters)
+    {
+        var half = thicknessMeters * 0.5f;
+        return new RectangleF(xMin, y - half, xMax - xMin, thicknessMeters);
+    }
+
+    private static bool WallStripIntersectsAnyPlacedItem(RectangleF wallStrip, IReadOnlyList<RectangleF> placedItemBounds)
+    {
+        foreach (var b in placedItemBounds)
+        {
+            if (wallStrip.IntersectsWith(b))
+                return true;
+        }
+
+        return false;
     }
 
     public bool TryEraseWallSegment(
