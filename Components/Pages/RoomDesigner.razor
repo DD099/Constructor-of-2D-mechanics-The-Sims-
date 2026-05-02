@@ -345,7 +345,10 @@
     protected override void OnInitialized()
     {
         Room.EnsureSampleRoom();
-        Build.GridStepMeters = Room.GridStepMeters;
+        var grid = Build.ClampGridStep(Room.GridStepMeters);
+        Room.GridStepMeters = grid;
+        Build.GridStepMeters = grid;
+        _gridStep = grid.ToString(CultureInfo.InvariantCulture);
         SyncInputsFromSelection();
     }
 
@@ -645,15 +648,26 @@
 
     private void ApplyGridStep()
     {
-        if (float.TryParse(_gridStep, NumberStyles.Float, CultureInfo.InvariantCulture, out var step) && step > 0f)
+        if (!float.TryParse(_gridStep, NumberStyles.Float, CultureInfo.InvariantCulture, out var step) || step <= 0f)
         {
-            Room.GridStepMeters = step;
-            Build.GridStepMeters = step;
-            Room.SetStatus($"Grid step: {step.ToString("0.##", CultureInfo.InvariantCulture)} m");
+            Room.SetStatus("Invalid grid step.");
+            return;
+        }
+
+        var clamped = Build.ClampGridStep(step);
+        Room.GridStepMeters = clamped;
+        Build.GridStepMeters = clamped;
+        _gridStep = clamped.ToString(CultureInfo.InvariantCulture);
+
+        if (clamped > step)
+        {
+            Room.SetStatus(
+                $"Grid step raised to {clamped.ToString("0.####", CultureInfo.InvariantCulture)} m " +
+                $"(room detection allows at most {BuildService.MaxRoomGridCellsPerAxis} cells per side).");
         }
         else
         {
-            Room.SetStatus("Invalid grid step.");
+            Room.SetStatus($"Grid step: {clamped.ToString("0.##", CultureInfo.InvariantCulture)} m");
         }
     }
 

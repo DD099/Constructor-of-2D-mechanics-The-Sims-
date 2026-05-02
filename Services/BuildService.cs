@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Globalization;
 using Microsoft.Extensions.Options;
 using SimsConstructor.Models.Building;
 using SimsConstructor.Options;
@@ -9,6 +10,11 @@ public sealed class BuildService
 {
     /// <summary>Thickness of wall collision strips (meters); must match <see cref="GetWallObstacleBounds"/> default.</summary>
     public const float WallCollisionThicknessMeters = 0.08f;
+
+    /// <summary>
+    /// Room detection uses a dense grid; this caps each axis so memory stays bounded (e.g. tiny grid step cannot allocate huge arrays).
+    /// </summary>
+    public const int MaxRoomGridCellsPerAxis = 512;
 
     private readonly float _roomWidthUnits;
     private readonly float _roomHeightUnits;
@@ -57,6 +63,26 @@ public sealed class BuildService
     public float RoomWidthUnits => _roomWidthUnits;
 
     public float RoomHeightUnits => _roomHeightUnits;
+
+    /// <summary>Smallest grid step (meters) that keeps room detection within <see cref="MaxRoomGridCellsPerAxis"/> cells on the longest edge.</summary>
+    public static float GetMinimumGridStepMeters(float roomWidthMeters, float roomHeightMeters)
+    {
+        var span = MathF.Max(roomWidthMeters, roomHeightMeters);
+        if (span <= 0f)
+            return 0.01f;
+
+        return span / MaxRoomGridCellsPerAxis;
+    }
+
+    /// <summary>Returns <paramref name="step"/> or the minimum allowed step for this build canvas, whichever is larger.</summary>
+    public float ClampGridStep(float step)
+    {
+        if (step <= 0f)
+            return _gridStepMeters;
+
+        var min = GetMinimumGridStepMeters(_roomWidthUnits, _roomHeightUnits);
+        return step < min ? min : step;
+    }
 
     public RoomArea? GetRoomAt(float centerX, float centerY)
     {
@@ -446,19 +472,45 @@ public sealed class BuildService
         if (!_roomsDirty)
             return;
 
-        _roomsDirty = false;
         _rooms.Clear();
 
         if (_walls.Count == 0)
+        {
+            _roomsDirty = false;
             return;
+        }
 
         var step = GridStepMeters;
         var eps = 1e-4f;
 
-        var cols = (int)MathF.Round(_roomWidthUnits / step);
-        var rows = (int)MathF.Round(_roomHeightUnits / step);
-        if (cols <= 0 || rows <= 0)
+        var colsD = (double)_roomWidthUnits / step;
+        var rowsD = (double)_roomHeightUnits / step;
+
+        if (!double.IsFinite(colsD)
+            || !double.IsFinite(rowsD)
+            || colsD < 1d - 1e-9
+            || rowsD < 1d - 1e-9
+            || colsD > MaxRoomGridCellsPerAxis
+            || rowsD > MaxRoomGridCellsPerAxis
+            || colsD > int.MaxValue - 2
+            || rowsD > int.MaxValue - 2)
+        {
+            SetStatus(
+                $"Grid step is too small for room detection (max {MaxRoomGridCellsPerAxis} cells per side). " +
+                $"Increase “Grid (m)” — minimum about {GetMinimumGridStepMeters(_roomWidthUnits, _roomHeightUnits).ToString("0.####", CultureInfo.InvariantCulture)} m for this room.");
+            _roomsDirty = false;
             return;
+        }
+
+        var cols = (int)Math.Round(colsD);
+        var rows = (int)Math.Round(rowsD);
+        if (cols <= 0 || rows <= 0)
+        {
+            _roomsDirty = false;
+            return;
+        }
+
+        _roomsDirty = false;
 
         var hWalls = new bool[rows + 1, cols]; // [yLine][xCell]
         var vWalls = new bool[cols + 1, rows]; // [xLine][yCell]
