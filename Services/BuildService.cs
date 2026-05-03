@@ -8,12 +8,10 @@ namespace SimsConstructor.Services;
 
 public sealed class BuildService
 {
-    /// <summary>Thickness of wall collision strips (meters); must match <see cref="GetWallObstacleBounds"/> default.</summary>
     public const float WallCollisionThicknessMeters = 0.08f;
 
-    /// <summary>
-    /// Room detection uses a dense grid; this caps each axis so memory stays bounded (e.g. tiny grid step cannot allocate huge arrays).
-    /// </summary>
+    private const float MaxWallObstacleThicknessToGridStepRatio = 0.99f;
+
     public const int MaxRoomGridCellsPerAxis = 512;
 
     private readonly float _roomWidthUnits;
@@ -64,7 +62,6 @@ public sealed class BuildService
 
     public float RoomHeightUnits => _roomHeightUnits;
 
-    /// <summary>Smallest grid step (meters) that keeps room detection within <see cref="MaxRoomGridCellsPerAxis"/> cells on the longest edge.</summary>
     public static float GetMinimumGridStepMeters(float roomWidthMeters, float roomHeightMeters)
     {
         var span = MathF.Max(roomWidthMeters, roomHeightMeters);
@@ -74,7 +71,6 @@ public sealed class BuildService
         return span / MaxRoomGridCellsPerAxis;
     }
 
-    /// <summary>Returns <paramref name="step"/> or the minimum allowed step for this build canvas, whichever is larger.</summary>
     public float ClampGridStep(float step)
     {
         if (step <= 0f)
@@ -82,6 +78,16 @@ public sealed class BuildService
 
         var min = GetMinimumGridStepMeters(_roomWidthUnits, _roomHeightUnits);
         return step < min ? min : step;
+    }
+
+    public float GetEffectiveWallObstacleThicknessMeters()
+    {
+        var step = GridStepMeters;
+        if (step <= 0f)
+            return WallCollisionThicknessMeters;
+
+        var cap = step * MaxWallObstacleThicknessToGridStepRatio;
+        return WallCollisionThicknessMeters < cap ? WallCollisionThicknessMeters : cap;
     }
 
     public RoomArea? GetRoomAt(float centerX, float centerY)
@@ -98,27 +104,25 @@ public sealed class BuildService
         return null;
     }
 
-    /// <summary>
-    /// Axis-aligned bounds for wall collision (items must not overlap these rectangles).
-    /// </summary>
-    public IReadOnlyList<RectangleF> GetWallObstacleBounds(float thicknessMeters = WallCollisionThicknessMeters)
+    public IReadOnlyList<RectangleF> GetWallObstacleBounds(float? thicknessMeters = null)
     {
         if (_walls.Count == 0)
             return [];
 
-        var half = thicknessMeters * 0.5f;
+        var t = thicknessMeters ?? GetEffectiveWallObstacleThicknessMeters();
+        var half = t * 0.5f;
         var list = new List<RectangleF>(_walls.Count);
         foreach (var w in _walls)
         {
             if (w.Orientation == WallOrientation.Horizontal)
             {
                 var y = w.Y1;
-                list.Add(new RectangleF(w.MinX, y - half, w.MaxX - w.MinX, thicknessMeters));
+                list.Add(new RectangleF(w.MinX, y - half, w.MaxX - w.MinX, t));
             }
             else
             {
                 var x = w.X1;
-                list.Add(new RectangleF(x - half, w.MinY, thicknessMeters, w.MaxY - w.MinY));
+                list.Add(new RectangleF(x - half, w.MinY, t, w.MaxY - w.MinY));
             }
         }
 
@@ -132,10 +136,12 @@ public sealed class BuildService
         float y2,
         out string? error,
         IReadOnlyList<RectangleF>? placedItemBounds = null,
-        float wallThicknessMeters = WallCollisionThicknessMeters)
+        float? wallThicknessMeters = null)
     {
         StatusMessage = null;
         error = null;
+
+        var wallT = wallThicknessMeters ?? GetEffectiveWallObstacleThicknessMeters();
 
         if (GridStepMeters <= 0f)
         {
@@ -181,7 +187,7 @@ public sealed class BuildService
 
             if (placedItemBounds is { Count: > 0 }
                 && WallStripIntersectsAnyPlacedItem(
-                    WallStripToObstacleRectVertical(x, mergedMin, mergedMax, wallThicknessMeters),
+                    WallStripToObstacleRectVertical(x, mergedMin, mergedMax, wallT),
                     placedItemBounds))
             {
                 error = "Wall would overlap placed furniture.";
@@ -233,7 +239,7 @@ public sealed class BuildService
 
             if (placedItemBounds is { Count: > 0 }
                 && WallStripIntersectsAnyPlacedItem(
-                    WallStripToObstacleRectHorizontal(mergedMin, mergedMax, y, wallThicknessMeters),
+                    WallStripToObstacleRectHorizontal(mergedMin, mergedMax, y, wallT),
                     placedItemBounds))
             {
                 error = "Wall would overlap placed furniture.";
@@ -264,9 +270,6 @@ public sealed class BuildService
         }
     }
 
-    /// <summary>
-    /// Union of the new vertical segment with all same-x walls it would merge into (read-only; matches post-commit geometry).
-    /// </summary>
     private void ComputeMergedVerticalSpan(float x, float yMin, float yMax, float eps, out float mergedMin, out float mergedMax)
     {
         mergedMin = MathF.Min(yMin, yMax);
@@ -296,9 +299,6 @@ public sealed class BuildService
         } while (changed);
     }
 
-    /// <summary>
-    /// Union of the new horizontal segment with all same-y walls it would merge into (read-only).
-    /// </summary>
     private void ComputeMergedHorizontalSpan(float y, float xMin, float xMax, float eps, out float mergedMin, out float mergedMax)
     {
         mergedMin = MathF.Min(xMin, xMax);
